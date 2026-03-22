@@ -1,6 +1,11 @@
-// L'Essence OS — Service Worker v1
-const CACHE = 'lessence-v1';
-const ASSETS = ['./index.html', './manifest.json'];
+// L'Essence OS — Service Worker v2
+const CACHE = 'lessence-v2';
+const ASSETS = [
+  './index.html',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
+];
 
 // ── Install: cache assets ─────────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -18,11 +23,13 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── Fetch: cache-first for app, network-first for Drive API ──────────
+// ── Fetch: cache-first para assets do app, rede para externos ─────────
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Deixar chamadas externas (Drive, Google) passarem direto
-  if (!url.origin.includes(self.location.origin)) return;
+
+  // Deixar chamadas externas (Drive, Google, fontes) passarem direto
+  if (url.origin !== self.location.origin) return;
+
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
@@ -43,7 +50,7 @@ self.addEventListener('push', e => {
   );
 });
 
-// ── Notification click: abrir app ────────────────────────────────────
+// ── Notification click: abrir app ─────────────────────────────────────
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(
@@ -56,7 +63,9 @@ self.addEventListener('notificationclick', e => {
   );
 });
 
-// ── Background sync: verificar OS vencidas ───────────────────────────
+// ── Background sync: verificar OS vencidas ────────────────────────────
+// Nota: periodicsync só funciona no Chrome Android com app instalado.
+// O fallback principal é feito pelo próprio app ao abrir (no index.html).
 self.addEventListener('periodicsync', e => {
   if (e.tag === 'check-vencidas') {
     e.waitUntil(verificarVencidasBackground());
@@ -64,14 +73,15 @@ self.addEventListener('periodicsync', e => {
 });
 
 async function verificarVencidasBackground() {
-  // Lê dados do localStorage via mensagem para o cliente ativo
-  const allClients = await clients.matchAll({ includeUncontrolled: true });
+  // Só envia mensagem se o app estiver aberto — se fechado, não há o que fazer aqui.
+  // A verificação offline é responsabilidade do app ao inicializar.
+  const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
   if (allClients.length > 0) {
     allClients[0].postMessage({ type: 'CHECK_VENCIDAS' });
   }
 }
 
-// ── Mensagens do app → SW ────────────────────────────────────────────
+// ── Mensagens do app → SW ─────────────────────────────────────────────
 self.addEventListener('message', e => {
   if (e.data?.type === 'NOTIF_VENCIDAS') {
     const { count } = e.data;
@@ -85,5 +95,10 @@ self.addEventListener('message', e => {
         actions: [{ action: 'abrir', title: 'Abrir app' }]
       });
     }
+  }
+
+  // Permite forçar atualização do SW via app (ex: após deploy)
+  if (e.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });
