@@ -2809,6 +2809,39 @@ body{font-family:var(--sans);color:#1a1a1a;background:#fff;max-width:820px;margi
 </div>
 
 <script>window.onload=()=>window.print();<\/script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAL1WyJe9n6e3t1YTojpzhO0qn7Js7Zrh8",
+    authDomain: "lessence-os-52b15.firebaseapp.com",
+    projectId: "lessence-os-52b15",
+    storageBucket: "lessence-os-52b15.firebasestorage.app",
+    messagingSenderId: "840361803286",
+    appId: "1:840361803286:web:61a72cc1ce6d470865ff37"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window.db = db;
+  import { collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+async function testeSalvar() {
+  try {
+    await addDoc(collection(window.db, "testes"), {
+      nome: "Paulo",
+      data: new Date()
+    });
+    console.log("Salvo no Firebase!");
+  } catch (e) {
+    console.error("Erro ao salvar:", e);
+  }
+}
+
+testeSalvar();
+</script>
 </body>
 </html>`);
 }
