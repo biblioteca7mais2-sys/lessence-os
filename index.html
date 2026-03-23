@@ -646,6 +646,8 @@ body{font-family:var(--font-sans);background:var(--obs);color:var(--iv);height:1
     <button class="btn bg" onclick="abrirModalExcel()" title="Exportar dados para planilha Excel">📗 <span>Excel</span></button>
     <button class="btn bg" onclick="exportJSON()" title="Baixar backup completo em JSON">💾 <span>Backup</span></button>
     <button class="btn bg" onclick="triggerImport()" title="Restaurar dados de um arquivo de backup">📂 <span>Restaurar</span></button>
+    <button class="btn bg" onclick="triggerMesclar()" title="Mesclar vários backups semanais em um só">🔀 <span>Mesclar</span></button>
+    <input type="file" id="mesclarInput" accept=".json" multiple style="display:none" onchange="mesclarBackups(this)">
     <button class="btn bg" id="btnDriveBackup" onclick="abrirModalDriveBackup()" title="Salvar backup no Google Drive" style="position:relative">
       ☁️ <span>Drive</span>
       <span id="driveStatusDot" style="display:none;position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:50%;background:#4eca82;box-shadow:0 0 4px #4eca82"></span>
@@ -1014,6 +1016,25 @@ body{font-family:var(--font-sans);background:var(--obs);color:var(--iv);height:1
     <div class="mfoot">
       <button class="btn bg" onclick="fecharOv('ovRestore')">Cancelar</button>
       <button class="btn bred" id="btnConfirmRestore" onclick="confirmarRestore()">🔄 Confirmar Restauração</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: MESCLAR BACKUPS -->
+<div class="ov" id="ovMesclar">
+  <div class="modal mw">
+    <div class="mt">🔀 Mesclar Backups Semanais</div>
+    <div style="font-size:.78rem;color:var(--ms);line-height:1.7;margin-bottom:12px">
+      Selecione 2 ou mais arquivos de backup <b style="color:var(--gold)">.json</b> para unir em um único backup mensal.<br>
+      OS duplicadas (mesmo número) serão mantidas apenas uma vez.
+    </div>
+    <div id="mesclarPreview" style="background:var(--gr);border:1px solid var(--sm);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--ms);line-height:1.9;min-height:60px"></div>
+    <div style="background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);border-radius:var(--r);padding:10px 13px;font-size:.74rem;color:var(--sv);margin-bottom:14px">
+      💡 <b style="color:var(--gold)">Dica:</b> Os dados atuais do app serão <b>substituídos</b> pelo resultado mesclado. Faça um backup antes se necessário.
+    </div>
+    <div class="mfoot">
+      <button class="btn bg" onclick="fecharOv('ovMesclar')">Cancelar</button>
+      <button class="btn bgold" id="btnConfirmMesclar" onclick="confirmarMesclar()" disabled>🔀 Mesclar e Carregar</button>
     </div>
   </div>
 </div>
@@ -4061,6 +4082,97 @@ let _restoreData=null;
 function triggerImport(){
   document.getElementById('importInput').value='';
   document.getElementById('importInput').click();
+}
+function triggerMesclar(){
+  document.getElementById('mesclarInput').value='';
+  document.getElementById('mesclarInput').click();
+}
+let _mesclarData=null;
+function mesclarBackups(input){
+  const files=Array.from(input.files);
+  if(files.length<2){toast('Selecione pelo menos 2 arquivos para mesclar.');return;}
+  let lidos=0;
+  const resultados=[];
+  files.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const data=JSON.parse(e.target.result);
+        if(!data.OS&&!data.os){toast('Arquivo "'+file.name+'" inválido.');return;}
+        resultados.push({nome:file.name,data});
+      }catch(err){toast('Erro ao ler "'+file.name+'".');}
+      lidos++;
+      if(lidos===files.length) processarMescla(resultados);
+    };
+    reader.readAsText(file);
+  });
+}
+function processarMescla(resultados){
+  if(resultados.length<2){toast('Não foi possível ler os arquivos. Verifique se são backups válidos.');return;}
+  // Mescla todos os arrays removendo duplicatas por ID/numero
+  const osMap=new Map(),eqMap=new Map(),prMap=new Map(),estMap=new Map(),arqMap=new Map(),movArr=[];
+  let condo=null,cnt=null;
+  resultados.forEach(r=>{
+    const d=r.data;
+    (d.OS||d.os||[]).forEach(o=>{const k=o.numero||o.id;if(k&&!osMap.has(k))osMap.set(k,o);});
+    (d.EQ||d.eq||[]).forEach(e=>{if(e.id&&!eqMap.has(e.id))eqMap.set(e.id,e);});
+    (d.PR||d.pr||[]).forEach(p=>{if(p.id&&!prMap.has(p.id))prMap.set(p.id,p);});
+    (d.EST||d.est||[]).forEach(s=>{if(s.id&&!estMap.has(s.id))estMap.set(s.id,s);});
+    (d.ARQ||d.arq||[]).forEach(a=>{const k=a.numero||a.id;if(k&&!arqMap.has(k))arqMap.set(k,a);});
+    (d.MOV||d.mov||[]).forEach(m=>movArr.push(m));
+    if(!condo&&d.CONDO)condo=d.CONDO;
+    if(!cnt&&d.CNT)cnt=d.CNT;
+  });
+  _mesclarData={
+    OS:[...osMap.values()],
+    EQ:[...eqMap.values()],
+    PR:[...prMap.values()],
+    EST:[...estMap.values()],
+    ARQ:[...arqMap.values()],
+    MOV:movArr,
+    CONDO:condo,
+    CNT:cnt,
+    exportadoEm:new Date().toISOString(),
+    versao:'mescla'
+  };
+  // Montar preview
+  const linhas=resultados.map(r=>`<div style="color:var(--sv)">📄 <b style="color:var(--ms)">${r.nome}</b> — ${(r.data.OS||r.data.os||[]).length} OS</div>`).join('');
+  document.getElementById('mesclarPreview').innerHTML=`
+    <div style="margin-bottom:10px">${linhas}</div>
+    <div style="border-top:1px solid var(--sm);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:5px">
+      <div>📋 <b style="color:var(--gold)">${_mesclarData.OS.length}</b> OS únicas</div>
+      <div>👷 <b style="color:var(--gold)">${_mesclarData.EQ.length}</b> Equipe</div>
+      <div>🤝 <b style="color:var(--gold)">${_mesclarData.PR.length}</b> Prestadores</div>
+      <div>📦 <b style="color:var(--gold)">${_mesclarData.EST.length}</b> Estoque</div>
+      <div>📁 <b style="color:var(--gold)">${_mesclarData.ARQ.length}</b> Arquivadas</div>
+    </div>`;
+  document.getElementById('btnConfirmMesclar').disabled=false;
+  abrirOv('ovMesclar');
+}
+function confirmarMesclar(){
+  if(!_mesclarData){fecharOv('ovMesclar');return;}
+  const d=_mesclarData;
+  OS =d.OS||[];
+  EQ =d.EQ||[];
+  PR =d.PR||[];
+  EST=d.EST||[];
+  MOV=d.MOV||[];
+  ARQ=d.ARQ||[];
+  if(d.CNT)CNT=d.CNT;
+  if(d.CONDO){
+    CONDO.nome=d.CONDO.nome||CONDO.nome;
+    CONDO.sub =d.CONDO.sub ||CONDO.sub;
+    CONDO.cnpj=d.CONDO.cnpj||CONDO.cnpj;
+    localStorage.setItem('lc_nome',CONDO.nome);
+    localStorage.setItem('lc_sub', CONDO.sub);
+    localStorage.setItem('lc_cnpj',CONDO.cnpj);
+  }
+  salvarDados();
+  fecharOv('ovMesclar');
+  renderSB();
+  mostrarWelcome();
+  toast(`✅ Mescla concluída! ${OS.length} OS carregadas.`,'ok');
+  _mesclarData=null;
 }
 function importarBackup(input){
   const file=input.files[0];if(!file)return;
